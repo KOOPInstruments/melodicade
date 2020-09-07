@@ -206,18 +206,25 @@ const byte      analogDelayTime = 25;                                   // Globa
 const byte      analogDeadzone = 2;                                     // The amount an analog reading needs to change before the variable is updated
 
 // Analog input variables
-byte            LLPotValue;                                             // The value of the Left/Left pot (mapped to 7-bits)
-byte            LMPotValue;                                             // The value of the Left/Middle pot (mapped to 7-bits)
+int             LLPotValue;                                             // The value of the Left/Left pot
+int             LMPotValue;                                             // The value of the Left/Middle pot
 byte            RMPotValue;                                             // The value of the Right/Middle pot (mapped to 7-bits)
 byte            RRPotValue;                                             // The value of the Right/Right pot (mapped to 7-bits)
-byte            previousLLPotValue;                                     // The previous value of the Left/Left pot for comparison
-byte            previousLMPotValue;                                     // The previous value of the Left/Middle pot for comparison
+int             previousLLPotValue;                                     // The previous value of the Left/Left pot for comparison
+int             previousLMPotValue;                                     // The previous value of the Left/Middle pot for comparison
 byte            previousRMPotValue;                                     // The previous value of the Right/Middle pot for comparison
 byte            previousRRPotValue;                                     // The previous value of the Right/Right pot for comparison
 unsigned long   previousLLPotTime;                                      // The last activation time for rate limiting
 unsigned long   previousLMPotTime;                                      // The last activation time for rate limiting
 unsigned long   previousRMPotTime;                                      // The last activation time for rate limiting
 unsigned long   previousRRPotTime;                                      // The last activation time for rate limiting
+
+
+// Metronome variables
+unsigned int    metronomeSpeed = 0;;
+unsigned int    metronomeMin = 1500;        // Delay in ms between beats - 1500 = 40bpm
+unsigned int    metronomeMax = 200;         // Delay in ms between beats - 200 = 300bpm
+unsigned long   previousMetronomeTime = 0;;
 
 // MIDI channel assignment
 byte midiChannel = 0;                                                   // Current MIDI channel (changed via user input)
@@ -263,6 +270,8 @@ byte            loopTrackActive[loopMaxTracks];                         // Loop 
 byte            loopPercentage;                                         // Variable to track percentage of loop completion for printing to the LCD
 byte            previousLoopPercentage;                                 // Previous state variable to prevent unnecessary LCD updates
 byte            loopParentChannel = 255;                                // Loop track designated as parent (overdub tracks will utilize this track's duration)
+int             looperVelocity; 
+
 
 // LCD screen related variables
 LiquidCrystal_I2C lcd(0x27,16,2);                                                           // Set LCD I2C address to 0x27 and 16 char 2 line display
@@ -377,6 +386,9 @@ void loop()
     // Set all states and values related to the control buttons and pots
     runControlModule();
 
+    // Run the metronome function
+    runMetronome();
+
     // Run the main and layer program select function
     runProgramSelect();
 
@@ -485,8 +497,8 @@ void readDigitalButtons()
 
 void readAnalogKnobs()
 {
-    LLPotValue = map(analogRead(LLPotPin), 0, 1023, 0, 127);                                            // Map to a 7 bit value for MIDI
-    LMPotValue = map(analogRead(LMPotPin), 0, 1023, 0, 127);                                            // Map to a 7 bit value for MIDI
+    LLPotValue = analogRead(LLPotPin);                                                                  // Store full 10 bit value
+    LMPotValue = analogRead(LMPotPin);                                                                  // Store full 10 bit value
     RMPotValue = map(analogRead(RMPotPin), 0, 1023, 0, 127);                                            // Map to a 7 bit value for MIDI
     RRPotValue = map(analogRead(RRPotPin), 0, 1023, 0, 127);                                            // Map to a 7 bit value for MIDI
 }
@@ -494,22 +506,33 @@ void readAnalogKnobs()
 void runControlModule()
 {
     // Analog MIDI CC Knobs
-    if ((LLPotValue > (previousLLPotValue + analogDeadzone) || LLPotValue < (previousLLPotValue - analogDeadzone))  // Deadzone to prevent noise from updating constantly
-        && ((millis() - previousLLPotTime) > analogDelayTime) )                                                     // Rate limit analog input MIDI CC updates
+    if (LLPotValue > (analogDeadzone * 6))
     {
-        controlChange(midiChannel, 12, constrain(LLPotValue, 0, 127));                                              // MIDI CC 12 - Effect 1 - Constrain to 7-bit value
-        previousLLPotValue = LLPotValue;                                                                            // Update "previous" variable for comparison on next loop
-        previousLLPotTime = millis();                                                                               // Update "previous" variable for comparison on next loop
+        if ((LLPotValue > (previousLLPotValue + (analogDeadzone * 6)) || LLPotValue < (previousLLPotValue - (analogDeadzone * 6)))  // Deadzone to squelch noise * 6 due to greater range
+           && ((millis() - previousLLPotTime) > analogDelayTime) )                                                     // Rate limit analog readings in case we are sending values to MIDI so that we don't overrun the buffer
+        {
+           metronomeSpeed = map(LLPotValue, (analogDeadzone * 6), 1023, metronomeMax, metronomeMin);                   // Map metronome speed to defined boundaries
+           previousLLPotValue = LLPotValue;                                                                            // Update "previous" variable for comparison on next loop
+           previousLLPotTime = millis();                                                                               // Update "previous" variable for comparison on next loop
+        }
     }
-    if ((LMPotValue > (previousLMPotValue + analogDeadzone) || LMPotValue < (previousLMPotValue - analogDeadzone))  // Deadzone to prevent noise from updating constantly
-        && ((millis() - previousLMPotTime) > analogDelayTime) )                                                     // Rate limit analog input MIDI CC updates
+    if (LLPotValue <= (analogDeadzone * 6))
     {
-        controlChange(midiChannel, 13, constrain(LMPotValue, 0, 127));                                              // MIDI CC 13 - Effect 2 - Constrain to 7-bit value
+        metronomeSpeed = 0;
+    }
+
+
+    if ((LMPotValue > (previousLMPotValue + (analogDeadzone * 6)) || LMPotValue < (previousLMPotValue - (analogDeadzone * 6)))  // Deadzone to squelch noise * 6 due to greater range
+        && ((millis() - previousLMPotTime) > analogDelayTime) )                                                     // Rate limit analog readings in case we are sending values to MIDI so that we don't overrun the buffer
+    {
+        looperVelocity = map(LMPotValue, 0, 1023, 0, 2000);
         previousLMPotValue = LMPotValue;                                                                            // Update "previous" variable for comparison on next loop
         previousLMPotTime = millis();                                                                               // Update "previous" variable for comparison on next loop
     }
-    if ((RMPotValue > (previousRMPotValue + analogDeadzone) || RMPotValue < (previousRMPotValue - analogDeadzone))  // Deadzone to prevent noise from updating constantly
-        && ((millis() - previousRMPotTime) > analogDelayTime) )                                                     // Rate limit analog input MIDI CC updates
+
+
+    if ((RMPotValue > (previousRMPotValue + analogDeadzone) || RMPotValue < (previousRMPotValue - analogDeadzone))  // Deadzone to squelch noise
+        && ((millis() - previousRMPotTime) > analogDelayTime) )                                                     // Rate limit analog readings in case we are sending values to MIDI so that we don't overrun the buffer
     {
         if (modulationState == HIGH && previousModulationState == HIGH)                                             // If the modulation button is currently being held, allow updating
         {
@@ -518,8 +541,8 @@ void runControlModule()
         previousRMPotValue = RMPotValue;                                                                            // Update "previous" variable for comparison on next loop
         previousRMPotTime = millis();                                                                               // Update "previous" variable for comparison on next loop
     }
-    if ((RRPotValue > (previousRRPotValue + analogDeadzone) || RRPotValue < (previousRRPotValue - analogDeadzone))  // Deadzone to prevent noise from updating constantly
-        && ((millis() - previousRRPotTime) > analogDelayTime) )                                                     // Rate limit analog input MIDI CC updates
+    if ((RRPotValue > (previousRRPotValue + analogDeadzone) || RRPotValue < (previousRRPotValue - analogDeadzone))  // Deadzone to squelch noise
+        && ((millis() - previousRRPotTime) > analogDelayTime) )                                                     // Rate limit analog readings in case we are sending values to MIDI so that we don't overrun the buffer
     {
         velocity = constrain(RRPotValue, 0, 127);                                                                   // Velocity level - Constrain to 7-bit value
         previousRRPotValue = RRPotValue;                                                                            // Update "previous" variable for comparison on next loop
@@ -573,6 +596,18 @@ void runControlModule()
     }
 
 }
+
+
+void runMetronome()
+{
+    if (metronomeSpeed > 0 && (millis() - previousMetronomeTime) > metronomeSpeed)
+    {
+        loopNoteOff(9, 56, 0);
+        loopNoteOn(9, 56, 63);
+        previousMetronomeTime = millis();
+    }
+}
+
 
 void runProgramSelect()
 {
@@ -2119,13 +2154,15 @@ void noteOn(byte channel, byte pitch, byte velocity)
 }
 void loopNoteOn(byte channel, byte pitch, byte velocity)
 {
+    byte myVelocity = constrain( ( (velocity * looperVelocity) / 1000), 0, 127);
     channel = 0x90 | channel;                                                   // Bitwise OR outside of the struct to prevent compiler warnings
-    midiEventPacket_t noteOn = {0x09, channel, pitch, velocity};                // Build a struct containing all of our information in a single packet
+    midiEventPacket_t noteOn = {0x09, channel, pitch, myVelocity};                // Build a struct containing all of our information in a single packet
     MidiUSB.sendMIDI(noteOn);                                                   // Send packet to the MIDI USB bus
     Serial1.write(0x90 | channel);                                              // Send event type/channel to the MIDI serial bus
     Serial1.write(pitch);                                                       // Send note number to the MIDI serial bus
     Serial1.write(velocity);                                                    // Send velocity value to the MIDI serial bus
 }
+
 
 // Send MIDI Note Off
 // 1st byte = Event type (0x09 = note on, 0x08 = note off).
