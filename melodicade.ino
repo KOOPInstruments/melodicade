@@ -67,8 +67,8 @@
 // Matrix Row 8          24
 // Matrix Row 9          12
 // --
-// Pot Left/Left         A17
-// Pot Left/Middle       A16
+// Pot Left/Left         A22
+// Pot Left/Middle       A21
 // Pot Right/Middle      A15
 // Pot Right/Right       A14
 // --
