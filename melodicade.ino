@@ -23,7 +23,7 @@
 //-----------------------------------------------------------------------
 //
 // Hardware Information:
-// Requires Teensy 3.6 or other Arduino compatible micro-controller with sufficient I/O
+// Teensy 3.6 set to 24MHz with USB type MIDI
 // I/O Pin requirments:
 //      28  pins in total
 //          21 digital
@@ -31,8 +31,8 @@
 //          2 I2C
 //          1 serial TX
 // Additional pin requirements:
-//      1 +5V for DIN MIDI
-//      1 +3.3V/+5V for potentiometers
+//      1 +3.3V for DIN MIDI
+//      1 +3.3V for potentiometers
 //      1 GND for DIN MIDI and potentiometers
 //
 // 85 x note buttons (scanning matrix of 10 columns * 9 rows = 90 with 5 unused nodes)
